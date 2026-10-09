@@ -59,6 +59,26 @@ class OpenbaseAgentUiTest {
     }
 
     @Test
+    fun callTargetDefaultsForwardToTargetlessProvider() = runTest {
+        val provider = TestCallTokenProvider()
+        val target = CallTargetThread(threadId = "s_1", label = "  Hi are you there?  ")
+        assertEquals("Hi are you there?", target.normalizedLabel)
+        assertNull(CallTargetThread(threadId = "s_1", label = "   ").normalizedLabel)
+        assertEquals("room-token", provider.fetchRoomToken("room", "dispatcher", target))
+        assertNull(provider.prepareRoomTokenIfNeeded("room", "dispatcher", target) {})
+    }
+
+    @Test
+    fun callTargetReachesAProviderThatImplementsIt() = runTest {
+        val provider = TargetAwareCallTokenProvider()
+        assertEquals(
+            "room-token:s_1:Thread",
+            provider.fetchRoomToken("room", "dispatcher", CallTargetThread("s_1", "Thread")),
+        )
+        assertEquals("room-token", provider.fetchRoomToken("room", "dispatcher"))
+    }
+
+    @Test
     fun callTokenPreparationDefaultsToNoOp() = runTest {
         val provider = TestCallTokenProvider()
         assertFalse(provider.shouldPrepareRoomToken())
@@ -100,6 +120,17 @@ private class TestSecureStorage : SecureStorage {
     override fun save(key: String, value: String) {}
     override fun read(key: String): String? = null
     override fun delete(key: String) {}
+}
+
+private class TargetAwareCallTokenProvider : CallTokenProvider {
+    override suspend fun fetchRoomToken(roomName: String, livekitDispatchAgentName: String): String =
+        fetchRoomToken(roomName, livekitDispatchAgentName, null)
+
+    override suspend fun fetchRoomToken(
+        roomName: String,
+        livekitDispatchAgentName: String,
+        targetThread: CallTargetThread?,
+    ): String = targetThread?.let { "room-token:${it.threadId}:${it.normalizedLabel.orEmpty()}" } ?: "room-token"
 }
 
 private class TestCallTokenProvider : CallTokenProvider {
